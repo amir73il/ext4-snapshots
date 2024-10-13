@@ -1400,6 +1400,7 @@ static struct hlist_head *fanotify_alloc_merge_hash(void)
 /* fanotify syscalls */
 SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 {
+	struct user_namespace *user_ns = current_user_ns();
 	struct fsnotify_group *group;
 	int f_flags, fd;
 	unsigned int fid_mode = flags & FANOTIFY_FID_BITS;
@@ -1487,8 +1488,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	}
 
 	/* Enforce groups limits per user in all containing user ns */
-	group->fanotify_data.ucounts = inc_ucount(current_user_ns(),
-						  current_euid(),
+	group->fanotify_data.ucounts = inc_ucount(user_ns, current_euid(),
 						  UCOUNT_FANOTIFY_GROUPS);
 	if (!group->fanotify_data.ucounts) {
 		fd = -EMFILE;
@@ -1497,6 +1497,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 
 	group->fanotify_data.flags = flags | internal_flags;
 	group->memcg = get_mem_cgroup_from_mm(current->mm);
+	group->user_ns = get_user_ns(user_ns);
 
 	group->fanotify_data.merge_hash = fanotify_alloc_merge_hash();
 	if (!group->fanotify_data.merge_hash) {
@@ -1756,17 +1757,6 @@ static int do_fanotify_mark(int fanotify_fd, unsigned int flags, __u64 mask,
 	group = fd_file(f)->private_data;
 
 	/*
-	 * An unprivileged user is not allowed to setup mount nor filesystem
-	 * marks.  This also includes setting up such marks by a group that
-	 * was initialized by an unprivileged user.
-	 */
-	ret = -EPERM;
-	if ((!capable(CAP_SYS_ADMIN) ||
-	     FAN_GROUP_FLAG(group, FANOTIFY_UNPRIV)) &&
-	    mark_type != FAN_MARK_INODE)
-		goto fput_and_out;
-
-	/*
 	 * Permission events require minimum priority FAN_CLASS_CONTENT.
 	 */
 	ret = -EINVAL;
@@ -1807,6 +1797,15 @@ static int do_fanotify_mark(int fanotify_fd, unsigned int flags, __u64 mask,
 		goto fput_and_out;
 
 	if (mark_cmd == FAN_MARK_FLUSH) {
+		/*
+		 * A user is not allowed to flush sb/mount marks unless the
+		 * user is capable in the user ns where the group was created.
+		 */
+		ret = -EPERM;
+		if (!ns_capable(group->user_ns, CAP_SYS_ADMIN) &&
+		    mark_type != FAN_MARK_INODE)
+			goto fput_and_out;
+
 		ret = 0;
 		if (mark_type == FAN_MARK_MOUNT)
 			fsnotify_clear_vfsmount_marks_by_group(group);
@@ -1845,11 +1844,29 @@ static int do_fanotify_mark(int fanotify_fd, unsigned int flags, __u64 mask,
 		inode = path.dentry->d_inode;
 		obj = inode;
 	} else {
+		/*
+		 * A user is not allowed to setup sb/mount marks unless the
+		 * user is capable in the user ns where the group was created.
+		 * The user also needs to be capable either in the user ns
+		 * associated with the marked filesystem or in the user ns
+		 * associated with an idmapped mount (when marking a mount).
+		 */
+		ret = -EPERM;
+		if (!ns_capable(group->user_ns, CAP_SYS_ADMIN))
+			goto path_put_and_out;
+
 		mnt = path.mnt;
 		if (mark_type == FAN_MARK_MOUNT)
 			obj = mnt;
 		else
 			obj = mnt->mnt_sb;
+
+		if (!ns_capable(mnt->mnt_sb->s_user_ns, CAP_SYS_ADMIN)) {
+			if (mark_type == FAN_MARK_FILESYSTEM ||
+			    !ns_capable(real_mount(mnt)->mnt_ns->user_ns,
+					CAP_SYS_ADMIN))
+				goto path_put_and_out;
+		}
 	}
 
 	/*
