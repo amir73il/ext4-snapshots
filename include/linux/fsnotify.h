@@ -178,6 +178,11 @@ static inline void file_set_fsnotify_mode(struct file *file)
 	}
 }
 
+static inline bool fsnotify_file_has_pre_content_watches(struct file *file)
+{
+	return file && unlikely(FMODE_FSNOTIFY_HSM(file->f_mode));
+}
+
 /*
  * fsnotify_file_area_perm - permission hook before access to file range
  */
@@ -262,6 +267,11 @@ static inline int fsnotify_open_perm(struct file *file)
 #else
 static inline void file_set_fsnotify_mode(struct file *file)
 {
+}
+
+static inline bool fsnotify_file_has_pre_content_watches(struct file *file)
+{
+	return false;
 }
 
 static inline int fsnotify_file_area_perm(struct file *file, int perm_mask,
