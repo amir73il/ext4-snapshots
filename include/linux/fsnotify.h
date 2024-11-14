@@ -134,9 +134,10 @@ static inline int fsnotify_file(struct file *file, __u32 mask)
  * Later, fsnotify permission hooks do not check if there are permission event
  * watches, but that there were permission event watches at open time.
  */
-static void file_set_fsnotify_mode(struct file *file)
+static inline void file_set_fsnotify_mode(struct file *file)
 {
 	struct super_block *sb = file->f_path.dentry->d_sb;
+	struct inode *inode;
 
 	/* Is it a file opened by fanotify? */
 	if (FMODE_FSNOTIFY_NONE(file->f_mode))
@@ -162,6 +163,19 @@ static void file_set_fsnotify_mode(struct file *file)
 		file->f_mode |= FMODE_NONOTIFY_HSM;
 		return;
 	}
+
+	/*
+	 * There are pre-content watchers in the filesystem, but are there
+	 * pre-content watchers on this specific file?
+	 * Pre-content events are only reported for regular files and dirs.
+	 */
+	inode = file_inode(file);
+	if ((!S_ISDIR(inode->i_mode) && !S_ISREG(inode->i_mode)) ||
+	    likely(!fsnotify_file_object_watched(file,
+						FSNOTIFY_PRE_CONTENT_EVENTS))) {
+		file->f_mode |= FMODE_NONOTIFY_HSM;
+		return;
+	}
 }
 
 /*
@@ -177,12 +191,29 @@ static inline int fsnotify_file_area_perm(struct file *file, int perm_mask,
 	 */
 	lockdep_assert_once(file_write_not_started(file));
 
+	if (!(perm_mask & (MAY_READ | MAY_WRITE | MAY_ACCESS)))
+		return 0;
+
+	if (likely(!FMODE_FSNOTIFY_PERM(file->f_mode)))
+		return 0;
+
+	/*
+	 * read()/write() and other types of access generate pre-content events.
+	 */
+	if (unlikely(FMODE_FSNOTIFY_HSM(file->f_mode))) {
+		int ret = fsnotify_path(&file->f_path, FS_PRE_ACCESS);
+
+		if (ret)
+			return ret;
+	}
+
 	if (!(perm_mask & MAY_READ))
 		return 0;
 
-	if (likely(file->f_mode & FMODE_NONOTIFY_PERM))
-		return 0;
-
+	/*
+	 * read() also generates the legacy FS_ACCESS_PERM event, so content
+	 * scanners can inspect the content filled by pre-content event.
+	 */
 	return fsnotify_path(&file->f_path, FS_ACCESS_PERM);
 }
 
