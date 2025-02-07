@@ -189,6 +189,12 @@ static void fuse_evict_inode(struct inode *inode)
 			atomic64_inc(&fc->evict_ctr);
 	}
 	if (S_ISREG(inode->i_mode) && !fuse_is_bad(inode)) {
+		/* fuse inode may have a long lived reference to backing file */
+		if (fuse_inode_backing(fi)) {
+			WARN_ON(!test_bit(FUSE_I_PASSTHROUGH, &fi->state));
+			fuse_inode_uncached_io_end(fi);
+		}
+
 		WARN_ON(fi->iocachectr != 0);
 		WARN_ON(!list_empty(&fi->write_files));
 		WARN_ON(!list_empty(&fi->queued_writes));

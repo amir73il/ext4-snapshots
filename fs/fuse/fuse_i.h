@@ -225,6 +225,8 @@ enum {
 	FUSE_I_BTIME,
 	/* Wants or already has page cache IO */
 	FUSE_I_CACHE_IO_MODE,
+	/* Has long lived backing file for inode ops passthrough */
+	FUSE_I_PASSTHROUGH,
 };
 
 struct fuse_conn;
@@ -1558,6 +1560,15 @@ ssize_t fuse_passthrough_splice_write(struct pipe_inode_info *pipe,
 				      size_t len, unsigned int flags);
 ssize_t fuse_passthrough_mmap(struct file *file, struct vm_area_struct *vma);
 
+static inline struct fuse_backing *fuse_inode_passthrough(struct fuse_inode *fi)
+{
+#ifdef CONFIG_FUSE_PASSTHROUGH
+	if (test_bit(FUSE_I_PASSTHROUGH, &fi->state))
+		return fuse_inode_backing(fi);
+#endif
+	return NULL;
+}
+
 #ifdef CONFIG_SYSCTL
 extern int fuse_sysctl_register(void);
 extern void fuse_sysctl_unregister(void);
@@ -1565,5 +1576,4 @@ extern void fuse_sysctl_unregister(void);
 #define fuse_sysctl_register()		(0)
 #define fuse_sysctl_unregister()	do { } while (0)
 #endif /* CONFIG_SYSCTL */
-
 #endif /* _FS_FUSE_I_H */
