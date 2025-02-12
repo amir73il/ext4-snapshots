@@ -487,6 +487,7 @@ struct fuse_file_lock {
 #define FUSE_ALLOW_IDMAP	(1ULL << 40)
 #define FUSE_OVER_IO_URING	(1ULL << 41)
 #define FUSE_REQUEST_TIMEOUT	(1ULL << 42)
+#define FUSE_PASSTHROUGH_INO	(1ULL << 43)
 
 /**
  * CUSE INIT request/reply flags

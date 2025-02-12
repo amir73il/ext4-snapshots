@@ -1416,6 +1416,8 @@ static void process_init_reply(struct fuse_mount *fm, struct fuse_args *args,
 				fc->passthrough = 1;
 				fc->max_stack_depth = arg->max_stack_depth;
 				fm->sb->s_stack_depth = arg->max_stack_depth;
+				if (flags & FUSE_PASSTHROUGH_INO)
+					fc->passthrough_ino = 1;
 			}
 			if (flags & FUSE_NO_EXPORT_SUPPORT)
 				fm->sb->s_export_op = &fuse_export_fid_operations;
@@ -1489,8 +1491,12 @@ void fuse_send_init(struct fuse_mount *fm)
 #endif
 	if (fm->fc->auto_submounts)
 		flags |= FUSE_SUBMOUNTS;
-	if (IS_ENABLED(CONFIG_FUSE_PASSTHROUGH))
+	if (IS_ENABLED(CONFIG_FUSE_PASSTHROUGH)) {
 		flags |= FUSE_PASSTHROUGH;
+		/* one-to-one ino mapping requires 64bit ino */
+		if (sizeof(ino_t) == sizeof(u64))
+			flags |= FUSE_PASSTHROUGH_INO;
+	}
 
 	/*
 	 * This is just an information flag for fuse server. No need to check

@@ -82,8 +82,10 @@ static void fuse_file_cached_io_release(struct fuse_file *ff,
 }
 
 /* Start strictly uncached io mode where cache access is not allowed */
-int fuse_inode_uncached_io_start(struct fuse_inode *fi, struct fuse_backing *fb)
+int fuse_inode_uncached_io_start(struct inode *inode, struct fuse_backing *fb)
 {
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_backing *oldfb;
 	int err = 0;
 
@@ -92,6 +94,12 @@ int fuse_inode_uncached_io_start(struct fuse_inode *fi, struct fuse_backing *fb)
 	oldfb = fuse_inode_backing(fi);
 	if (fb && oldfb && oldfb != fb) {
 		err = -EBUSY;
+		goto unlock;
+	}
+	/* With FUSE_PASSTHROUGH_INO, fuse and backing ino must match */
+	if (fb && fc->passthrough_ino &&
+	    fb->file->f_inode->i_ino != inode->i_ino) {
+		err = -EIO;
 		goto unlock;
 	}
 	if (fi->iocachectr > 0) {
@@ -117,10 +125,9 @@ static int fuse_file_uncached_io_open(struct inode *inode,
 				      struct fuse_file *ff,
 				      struct fuse_backing *fb)
 {
-	struct fuse_inode *fi = get_fuse_inode(inode);
 	int err;
 
-	err = fuse_inode_uncached_io_start(fi, fb);
+	err = fuse_inode_uncached_io_start(inode, fb);
 	if (err)
 		return err;
 

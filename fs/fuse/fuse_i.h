@@ -882,6 +882,9 @@ struct fuse_conn {
 	/** Passthrough support for read/write IO */
 	unsigned int passthrough:1;
 
+	/** One-to-one mapping between fuse ino to backing ino */
+	unsigned int passthrough_ino:1;
+
 	/* Use pages instead of pointer for kernel I/O */
 	unsigned int use_pages_for_kvec_io:1;
 
@@ -1479,8 +1482,7 @@ int fuse_fileattr_set(struct mnt_idmap *idmap,
 
 /* iomode.c */
 int fuse_file_cached_io_open(struct inode *inode, struct fuse_file *ff);
-int fuse_inode_uncached_io_start(struct fuse_inode *fi,
-				 struct fuse_backing *fb);
+int fuse_inode_uncached_io_start(struct inode *inode, struct fuse_backing *fb);
 void fuse_inode_uncached_io_end(struct fuse_inode *fi);
 
 int fuse_file_io_open(struct file *file, struct inode *inode);
