@@ -1194,6 +1194,39 @@ static void fuse_statx_to_attr(struct fuse_statx *sx, struct fuse_attr *attr)
 	attr->blksize = sx->blksize;
 }
 
+void fuse_kstat_to_attr(struct mnt_idmap *idmap, struct inode *inode,
+			const struct kstat *stat, struct fuse_attr *attr,
+			struct fuse_statx *sx)
+{
+	struct fuse_conn *fc = get_fuse_conn(inode);
+
+	memset(sx, 0, sizeof(*sx));
+	sx->ino = stat->ino;
+	sx->mode = stat->mode;
+	sx->nlink = stat->nlink;
+	sx->uid = from_kuid(fc->user_ns, stat->uid);
+	sx->gid = from_kgid(fc->user_ns, stat->gid);
+	sx->dev_major = MAJOR(stat->dev);
+	sx->dev_minor = MINOR(stat->dev);
+	sx->rdev_major = MAJOR(stat->rdev);
+	sx->rdev_minor = MINOR(stat->rdev);
+	sx->atime.tv_sec = stat->atime.tv_sec;
+	sx->atime.tv_nsec = min_t(u32, stat->atime.tv_nsec, NSEC_PER_SEC - 1);
+	sx->mtime.tv_sec = stat->mtime.tv_sec;
+	sx->mtime.tv_nsec = min_t(u32, stat->mtime.tv_nsec, NSEC_PER_SEC - 1);
+	sx->ctime.tv_sec = stat->ctime.tv_sec;
+	sx->ctime.tv_nsec = min_t(u32, stat->ctime.tv_nsec, NSEC_PER_SEC - 1);
+	sx->btime.tv_sec = stat->btime.tv_sec;
+	sx->btime.tv_nsec = min_t(u32, stat->btime.tv_nsec, NSEC_PER_SEC - 1);
+	sx->size = stat->size;
+	sx->blocks = attr->blocks;
+	sx->blksize = stat->blksize;
+	sx->mask = stat->result_mask & (STATX_BASIC_STATS | STATX_BTIME);
+	sx->attributes = stat->attributes;
+	sx->attributes_mask = stat->attributes_mask;
+	fuse_statx_to_attr(sx, attr);
+}
+
 static int fuse_do_statx(struct mnt_idmap *idmap, struct inode *inode,
 			 struct file *file, struct kstat *stat)
 {
@@ -1318,6 +1351,13 @@ static int fuse_update_get_attr(struct mnt_idmap *idmap, struct inode *inode,
 retry:
 	if (fc->no_statx)
 		request_mask &= STATX_BASIC_STATS;
+
+	if (fuse_inode_passthrough_op(inode, FUSE_GETATTR)) {
+		forget_all_cached_acls(inode);
+		err = fuse_passthrough_getattr(idmap, inode, stat,
+					       request_mask, flags);
+		return err;
+	}
 
 	if (!request_mask)
 		sync = false;
