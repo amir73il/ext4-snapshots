@@ -1504,7 +1504,8 @@ void fuse_file_release(struct inode *inode, struct fuse_file *ff,
 	(FUSE_PASSTHROUGH_OP_READ | FUSE_PASSTHROUGH_OP_WRITE)
 
 /* Inode passthrough operations for backing file attached to inode */
-#define FUSE_PASSTHROUGH_INODE_OPS (0)
+#define FUSE_PASSTHROUGH_INODE_OPS \
+	(FUSE_PASSTHROUGH_OP_GETXATTR | FUSE_PASSTHROUGH_OP_LISTXATTR)
 
 #define FUSE_BACKING_MAP_OP(map, op) \
 	((map)->ops_mask & FUSE_PASSTHROUGH_OP(op))
@@ -1592,6 +1593,11 @@ static inline bool fuse_inode_passthrough_op(struct inode *inode,
 
 	return fb && fb->ops_mask & FUSE_PASSTHROUGH_OP(op);
 }
+
+ssize_t fuse_passthrough_getxattr(struct inode *inode, const char *name,
+				  void *value, size_t size);
+ssize_t fuse_passthrough_listxattr(struct dentry *entry, char *list,
+				   size_t size);
 
 #ifdef CONFIG_SYSCTL
 extern int fuse_sysctl_register(void);

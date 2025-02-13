@@ -48,8 +48,8 @@ int fuse_setxattr(struct inode *inode, const char *name, const void *value,
 	return err;
 }
 
-ssize_t fuse_getxattr(struct inode *inode, const char *name, void *value,
-		      size_t size)
+static ssize_t fuse_do_getxattr(struct inode *inode, const char *name,
+				void *value, size_t size)
 {
 	struct fuse_mount *fm = get_fuse_mount(inode);
 	FUSE_ARGS(args);
@@ -89,6 +89,15 @@ ssize_t fuse_getxattr(struct inode *inode, const char *name, void *value,
 	return ret;
 }
 
+ssize_t fuse_getxattr(struct inode *inode, const char *name, void *value,
+		      size_t size)
+{
+	if (fuse_inode_passthrough_op(inode, FUSE_GETXATTR))
+		return fuse_passthrough_getxattr(inode, name, value, size);
+	else
+		return fuse_do_getxattr(inode, name, value, size);
+}
+
 static int fuse_verify_xattr_list(char *list, size_t size)
 {
 	size_t origsize = size;
@@ -106,7 +115,7 @@ static int fuse_verify_xattr_list(char *list, size_t size)
 	return origsize;
 }
 
-ssize_t fuse_listxattr(struct dentry *entry, char *list, size_t size)
+static ssize_t fuse_do_listxattr(struct dentry *entry, char *list, size_t size)
 {
 	struct inode *inode = d_inode(entry);
 	struct fuse_mount *fm = get_fuse_mount(inode);
@@ -151,6 +160,14 @@ ssize_t fuse_listxattr(struct dentry *entry, char *list, size_t size)
 		ret = -EOPNOTSUPP;
 	}
 	return ret;
+}
+
+ssize_t fuse_listxattr(struct dentry *entry, char *list, size_t size)
+{
+	if (fuse_inode_passthrough_op(d_inode(entry), FUSE_LISTXATTR))
+		return fuse_passthrough_listxattr(entry, list, size);
+	else
+		return fuse_do_listxattr(entry, list, size);
 }
 
 int fuse_removexattr(struct inode *inode, const char *name)

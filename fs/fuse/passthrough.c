@@ -371,3 +371,38 @@ void fuse_passthrough_release(struct fuse_file *ff, struct fuse_backing *fb)
 	put_cred(ff->cred);
 	ff->cred = NULL;
 }
+
+/*
+ * Inode passthrough operations for backing file attached on lookup.
+ */
+
+ssize_t fuse_passthrough_getxattr(struct inode *inode, const char *name,
+				  void *value, size_t size)
+{
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_backing *fb = fuse_inode_passthrough(fi);
+	struct path *fb_path = &fb->file->f_path;
+	const struct cred *old_cred;
+	ssize_t res;
+
+	old_cred = override_creds(fb->cred);
+	res = vfs_getxattr(mnt_idmap(fb_path->mnt), fb_path->dentry, name,
+			   value, size);
+	revert_creds(old_cred);
+	return res;
+}
+
+ssize_t fuse_passthrough_listxattr(struct dentry *entry, char *list,
+				   size_t size)
+{
+	struct fuse_inode *fi = get_fuse_inode(d_inode(entry));
+	struct fuse_backing *fb = fuse_inode_passthrough(fi);
+	struct path *fb_path = &fb->file->f_path;
+	const struct cred *old_cred;
+	ssize_t res;
+
+	old_cred = override_creds(fb->cred);
+	res = vfs_listxattr(fb_path->dentry, list, size);
+	revert_creds(old_cred);
+	return res;
+}
