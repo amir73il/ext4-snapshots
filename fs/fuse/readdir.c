@@ -595,6 +595,9 @@ int fuse_readdir(struct file *file, struct dir_context *ctx)
 	if (fuse_is_bad(inode))
 		return -EIO;
 
+	if (fuse_file_passthrough(ff))
+		return fuse_passthrough_readdir(file, ctx);
+
 	err = UNCACHED;
 	if (ff->open_flags & FOPEN_CACHE_DIR)
 		err = fuse_readdir_cached(file, ctx);

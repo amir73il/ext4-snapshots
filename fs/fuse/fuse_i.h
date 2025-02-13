@@ -1506,6 +1506,10 @@ void fuse_file_release(struct inode *inode, struct fuse_file *ff,
 #define FUSE_PASSTHROUGH_RW_OPS \
 	(FUSE_PASSTHROUGH_OP_READ | FUSE_PASSTHROUGH_OP_WRITE)
 
+/* Passthrough operations for directories */
+#define FUSE_PASSTHROUGH_DIR_OPS \
+	(FUSE_PASSTHROUGH_OP_READDIR)
+
 /* Inode passthrough operations for backing file attached to inode */
 #define FUSE_PASSTHROUGH_INODE_OPS \
 	(FUSE_PASSTHROUGH_OP_GETATTR | FUSE_PASSTHROUGH_OP_STATX | \
@@ -1579,6 +1583,7 @@ ssize_t fuse_passthrough_splice_write(struct pipe_inode_info *pipe,
 				      struct file *out, loff_t *ppos,
 				      size_t len, unsigned int flags);
 ssize_t fuse_passthrough_mmap(struct file *file, struct vm_area_struct *vma);
+int fuse_passthrough_readdir(struct file *file, struct dir_context *ctx);
 
 static inline struct fuse_backing *fuse_inode_passthrough(struct fuse_inode *fi)
 {

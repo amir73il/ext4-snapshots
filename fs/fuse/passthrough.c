@@ -144,6 +144,32 @@ ssize_t fuse_passthrough_mmap(struct file *file, struct vm_area_struct *vma)
 	return backing_file_mmap(backing_file, vma, &ctx);
 }
 
+int fuse_passthrough_readdir(struct file *file, struct dir_context *ctx)
+{
+	int ret;
+	const struct cred *old_cred;
+	struct inode *inode = file_inode(file);
+	struct fuse_file *ff = file->private_data;
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_backing *fb = fuse_inode_passthrough(fi);
+	struct file *backing_file = fuse_file_passthrough(ff);
+	bool locked;
+
+	pr_debug("%s: backing_file=0x%p, pos=%lld\n", __func__,
+		 backing_file, ctx->pos);
+
+	old_cred = override_creds(fb->cred);
+	locked = fuse_lock_inode(inode);
+	/* Respect seekdir() on fuse dir */
+	vfs_llseek(backing_file, ctx->pos, SEEK_SET);
+	ret = iterate_dir(backing_file, ctx);
+	fuse_invalidate_atime(inode);
+	fuse_unlock_inode(inode, locked);
+	revert_creds(old_cred);
+
+	return ret;
+}
+
 struct fuse_backing *fuse_backing_get(struct fuse_backing *fb)
 {
 	if (fb && refcount_inc_not_zero(&fb->count))
@@ -242,6 +268,11 @@ int fuse_backing_open(struct fuse_conn *fc, struct fuse_backing_map *map)
 	if (!file)
 		goto out;
 
+	res = -ENOTDIR;
+	if (map->ops_mask & FUSE_PASSTHROUGH_DIR_OPS &&
+	    !d_is_dir(file->f_path.dentry))
+		goto out_fput;
+
 	res = -EOPNOTSUPP;
 	/*
 	 * It is not a problem to use an O_PATH fd as a backing file, because
@@ -252,7 +283,6 @@ int fuse_backing_open(struct fuse_conn *fc, struct fuse_backing_map *map)
 	 */
 	if ((FUSE_BACKING_MAP_OP(map, FUSE_READ) && !file->f_op->read_iter) ||
 	    (FUSE_BACKING_MAP_OP(map, FUSE_WRITE) && !file->f_op->write_iter))
-		goto out_fput;
 
 	/* FUSE_STATX passthrough implies FUSE_GETATTR passthrough */
 	if (FUSE_BACKING_MAP_OP(map, FUSE_STATX))
@@ -356,6 +386,8 @@ struct fuse_backing *fuse_passthrough_open(struct file *file,
 	}
 
 	err = 0;
+	/* Readdir cache not used for passthrough */
+	ff->open_flags &= ~FOPEN_CACHE_DIR;
 	ff->passthrough = backing_file;
 	ff->cred = get_cred(fb->cred);
 out:
